@@ -1,0 +1,46 @@
+services:
+#  web:
+#    build: .
+#    container_name: fastapi_app
+#    ports:
+#      - "8000:8000"
+#    depends_on:
+#      - postgres
+#    environment:
+#      - DB_HOST=${DB_HOST}
+#      - POSTGRES_DB=${DB_NAME}
+#      - POSTGRES_USER=${DB_USER}
+#      - POSTGRES_PASSWORD=${DB_PASSWORD}
+#    networks:
+#      - my_network
+
+  postgres:
+    image: postgres:15
+    container_name: postgres_db
+    ports:
+      - "5432:5432"
+    #    restart: always
+    environment:
+      - POSTGRES_DB=${DB_NAME}
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - pg_logs:/var/lib/postgresql/logs
+    networks:
+      - my_network
+    command: >
+      postgres -c log_destination=stderr
+               -c logging_collector=on
+               -c log_directory='/var/lib/postgresql/logs'
+    entrypoint: >
+      bash -c "chown -R postgres:postgres /var/lib/postgresql/logs && exec docker-entrypoint.sh postgres"
+
+
+networks:
+  my_network:
+
+volumes:
+  pg_data:
+  pg_logs:
