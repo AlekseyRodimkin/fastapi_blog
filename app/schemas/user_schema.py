@@ -1,16 +1,26 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, field_serializer
+from typing import Optional
+from datetime import datetime, timezone
 
 
 class BaseUser(BaseModel):
-    name: str
+    username: str
+    email: str
+    telegram: Optional[str] = None
+    about_me: Optional[str] = None
+    password_hash: Optional[str] = None
 
 
-class UserIn(BaseUser): ...
+class UserIn(BaseUser):
+    ...
 
 
 class UserOut(BaseUser):
     id: int
-    name: str
+    last_seen: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
+
+    @field_serializer('last_seen')
+    def serialize_last_seen(self, last_seen: datetime, _info):
+        return last_seen.astimezone(timezone.utc).isoformat()
