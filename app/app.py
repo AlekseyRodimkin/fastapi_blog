@@ -2,9 +2,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from config.logging_config import logger
 
-from .routes.medias import router as medias_router
-from .routes.posts import router as posts_router
-from .routes.users import router as users_router
+from .routes.medias import medias_router
+from .routes.tweets import tweets_router
+from .routes.users import users_router
 
 app = FastAPI()
 app_logger = logger.bind(name="app")
@@ -44,7 +44,7 @@ app.add_middleware(
 )
 
 app.include_router(medias_router)
-app.include_router(posts_router)
+app.include_router(tweets_router)
 app.include_router(users_router)
 
 

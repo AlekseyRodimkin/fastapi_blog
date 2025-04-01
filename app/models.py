@@ -1,19 +1,10 @@
 import sqlalchemy as sa
 import sqlalchemy.orm as so
 from datetime import datetime, timezone
-from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
 from config.config import Base
 from typing import Optional
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-
-def generate_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
-
-
-# Subscriber table
 followers = sa.Table(
     'followers',
     Base.metadata,
@@ -21,17 +12,21 @@ followers = sa.Table(
     sa.Column('followed_id', sa.Integer, sa.ForeignKey('users.id'), primary_key=True)
 )
 
+likes = sa.Table(
+    'likes',
+    Base.metadata,
+    sa.Column('user_id', sa.Integer, sa.ForeignKey('users.id', ondelete="CASCADE"), primary_key=True),
+    sa.Column('tweet_id', sa.Integer, sa.ForeignKey('tweets.id', ondelete="CASCADE"), primary_key=True)
+)
+
 
 class User(Base):
-    """User model"""
     __tablename__ = "users"
     id: so.Mapped[int] = so.mapped_column(primary_key=True)
     username: so.Mapped[str] = so.mapped_column(sa.String(64), index=True, unique=True, nullable=False)
     email: so.Mapped[str] = so.mapped_column(sa.String(120), index=True, unique=True, nullable=False)
-    telegram: so.Mapped[Optional[str]] = so.mapped_column(sa.String(120), index=True, nullable=True)
-    about_me: so.Mapped[Optional[str]] = so.mapped_column(sa.String(140), nullable=True)
-    api_key: so.Mapped[Optional[str]] = so.mapped_column(sa.String(256), nullable=False)
-    password_hash: so.Mapped[Optional[str]] = so.mapped_column(sa.String(256), nullable=True)
+    about_me: so.Mapped[Optional[str]] = so.mapped_column(sa.String(140))
+    api_key: so.Mapped[str] = so.mapped_column(sa.String(256), nullable=False)
 
     last_seen: so.Mapped[datetime] = so.mapped_column(
         sa.DateTime(timezone=True),
@@ -39,102 +34,117 @@ class User(Base):
         server_default=sa.func.now()
     )
 
-    posts: so.WriteOnlyMapped['Post'] = so.relationship("Post", back_populates='author', passive_deletes=True)
-    following: so.WriteOnlyMapped['User'] = so.relationship(
+    tweets: so.Mapped[list["Tweet"]] = so.relationship(
+        "Tweet",
+        back_populates='author',
+        passive_deletes=True
+    )
+    liked_tweets: so.Mapped[list["Tweet"]] = so.relationship(
+        "Tweet",
+        secondary=likes,
+        back_populates="liked_by"
+    )
+
+    following: so.Mapped[list["User"]] = so.relationship(
         "User",
         secondary=followers,
         primaryjoin=(followers.c.follower_id == id),
         secondaryjoin=(followers.c.followed_id == id),
-        back_populates='followers',
-        passive_deletes=True
+        back_populates='followers'
     )
-    followers: so.WriteOnlyMapped['User'] = so.relationship(
+    followers: so.Mapped[list["User"]] = so.relationship(
         "User",
         secondary=followers,
         primaryjoin=(followers.c.followed_id == id),
         secondaryjoin=(followers.c.follower_id == id),
-        back_populates='following',
-        passive_deletes=True
+        back_populates='following'
     )
 
-    def set_password(self, password: str):
-        """Password setting function"""
-        self.password_hash = generate_password_hash(password)
-
-    def set_api_key(self, api_key: str):
-        """Api key setting function"""
+    async def set_api_key(self, api_key: str):
         self.api_key = api_key
 
-    def set_last_seen(self):
-        """Updates Last_seen for the current time"""
-        self.last_seen = datetime.now()
+    async def update_last_seen(self):
+        self.last_seen = datetime.now(timezone.utc)
 
     async def is_following(self, session: AsyncSession, user: "User") -> bool:
-        """Subscription check"""
-        query = sa.select(followers).where(
+        query = sa.select(sa.exists().where(
             (followers.c.follower_id == self.id) & (followers.c.followed_id == user.id)
-        )
+        ))
         result = await session.execute(query)
-        return result.scalar() is not None
+        return result.scalar()
 
     async def follow(self, session: AsyncSession, user: "User"):
-        """Subscription"""
         if not await self.is_following(session, user):
-            session.add(followers.insert().values(follower_id=self.id, followed_id=user.id))
+            await session.execute(
+                followers.insert().values(follower_id=self.id, followed_id=user.id))
             await session.commit()
 
     async def unfollow(self, session: AsyncSession, user: "User"):
-        """Unsubscribe"""
-        if await self.is_following(session, user):
-            query = followers.delete().where(
-                (followers.c.follower_id == self.id) & (followers.c.followed_id == user.id)
+        await session.execute(
+            followers.delete().where(
+                (followers.c.follower_id == self.id) &
+                (followers.c.followed_id == user.id)
             )
-            await session.execute(query)
-            await session.commit()
+        )
+        await session.commit()
 
     async def followers_count(self, session: AsyncSession) -> int:
-        """The number of subscribers"""
-        query = sa.select(sa.func.count()).select_from(
-            followers.select().where(followers.c.followed_id == self.id).subquery()
-        )
+        query = sa.select(sa.func.count()).where(followers.c.followed_id == self.id)
         result = await session.execute(query)
         return result.scalar()
 
     async def following_count(self, session: AsyncSession) -> int:
-        """The number of subscriptions"""
-        query = sa.select(sa.func.count()).select_from(
-            followers.select().where(followers.c.follower_id == self.id).subquery()
-        )
+        query = sa.select(sa.func.count()).where(followers.c.follower_id == self.id)
         result = await session.execute(query)
         return result.scalar()
 
+    async def like_tweet(self, session: AsyncSession, tweet: "Tweet") -> None:
+        if tweet not in self.liked_tweets:
+            await session.execute(
+                likes.insert().values(user_id=self.id, tweet_id=tweet.id)
+            )
+            self.liked_tweets.append(tweet)
+            tweet.liked_by.append(self)
+            await session.commit()
 
-class Media(Base):
-    """Media model"""
-    __tablename__ = "media"
-
-    id: so.Mapped[int] = so.mapped_column(primary_key=True)
-    image_link: so.Mapped[str] = so.mapped_column(sa.String(), nullable=False)
-    post_id: so.Mapped[int] = so.mapped_column(sa.ForeignKey("posts.id"), nullable=True)
+    async def unlike_tweet(self, session: AsyncSession, tweet: "Tweet") -> None:
+        if tweet in self.liked_tweets:
+            await session.execute(
+                likes.delete()
+                .where((likes.c.user_id == self.id) & (likes.c.tweet_id == tweet.id))
+            )
+            self.liked_tweets.remove(tweet)
+            tweet.liked_by.remove(self)
+            await session.commit()
 
     def __repr__(self):
-        return f"<Media {self.image_link}>"
+        return f"<User {self.username}>"
 
 
-class Post(Base):
-    """Post model"""
-    __tablename__ = "posts"
-
+class Media(Base):
+    __tablename__ = "media"
     id: so.Mapped[int] = so.mapped_column(primary_key=True)
-    body: so.Mapped[str] = so.mapped_column(sa.String(140))
+    image_link: so.Mapped[str] = so.mapped_column(sa.String(), nullable=False)
+    tweet_id: so.Mapped[int] = so.mapped_column(sa.ForeignKey("tweets.id", ondelete="CASCADE"), index=True,
+                                                nullable=True)
+
+    def __repr__(self):
+        return f"<Media {self.id}: {self.image_link}>"
+
+
+class Tweet(Base):
+    __tablename__ = "tweets"
+    id: so.Mapped[int] = so.mapped_column(primary_key=True)
+    tweet_data: so.Mapped[Optional[str]] = so.mapped_column(sa.String(1000))
     timestamp: so.Mapped[datetime] = so.mapped_column(
         sa.DateTime(timezone=True),
         nullable=False,
         server_default=sa.func.now()
     )
-    user_id: so.Mapped[int] = so.mapped_column(sa.ForeignKey("users.id"), index=True)
-    author: so.Mapped[User] = so.relationship("User", back_populates="posts")
-    media: so.Mapped[list["Media"]] = so.relationship("Media", backref="post")
+    user_id: so.Mapped[int] = so.mapped_column(sa.ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    author: so.Mapped[User] = so.relationship("User", back_populates="tweets")
+    liked_by: so.Mapped[list[User]] = so.relationship("User", secondary=likes, back_populates="liked_tweets")
+    tweet_media: so.Mapped[list[Media]] = so.relationship("Media", backref="tweet", passive_deletes=True)
 
     def __repr__(self):
-        return f"<Post {self.body}>"
+        return f"<Tweet {self.id} by {self.user_id}>"

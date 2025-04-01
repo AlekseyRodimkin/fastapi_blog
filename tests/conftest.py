@@ -34,17 +34,22 @@ test_data = {
             "data": {"username": "test_user_2", "email": "test2@example.com"}
         },
     },
-    "posts": [],
+    "tweets": {
+        "new": {
+            "tweet_data": "Test data1",
+            "media_ids": []
+        }
+    }
 
 }
 
 
-def assert_and_log(condition, error_message):
+def assert_and_log(function_name: str, condition, error_message: str):
     """Checks condition and logs the error if it is not fulfilled"""
     try:
         assert condition
     except AssertionError:
-        tests_logger.error(error_message)
+        tests_logger.error(f"{function_name}() -> {error_message}")
         raise
 
 
@@ -66,7 +71,7 @@ async def db_session():
 
 
 @pytest_asyncio.fixture(scope="function")
-async def add_test_user(db_session):
+async def added_test_user(db_session):
     """Fixture for adding a test user before each test."""
     tests_logger.debug("add_test_user()")
 

@@ -3,7 +3,7 @@ from sqlalchemy.future import select
 from app import models
 from config.config import get_db
 from config.logging_config import logger
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException
 import aiohttp
 import aiofiles.os as aio_os
 import os
@@ -11,51 +11,51 @@ import os
 app_logger = logger.bind(name="app")
 
 
-async def get_current_user(api_key: str, db: AsyncSession = Depends(get_db)) -> models.User | None:
-    """Validate API key and update last seen timestamp for the user."""
-    app_logger.debug("Validating API key")
-    try:
-        result = await db.execute(select(models.User).where(models.User.api_key == api_key))
-        current_user = result.scalars().first()
+async def get_current_user_or_none(api_key: str, db: AsyncSession = Depends(get_db)) -> models.User | None:
+    """Get current user by api_key and update last seen timestamp.
 
-        if current_user:
-            current_user.set_last_seen()
-            await db.commit()
-            await db.refresh(current_user)
-            app_logger.info(f"User authenticated: {current_user.id}")
-        else:
-            app_logger.warning("Invalid API key")
+       Args:
+           api_key (str): API key from request headers
+           db (AsyncSession): Database session dependency
+       Returns:
+           models.User: Authenticated user object if found by 'api_key'
+           None: If user with provided API key doesn't exist
+       Raises:
+           HTTPException: 500 error if database operation fails
+       """
+    app_logger.debug(f"get_current_user(api_key={api_key})")
 
-        return current_user
-    except Exception as e:
-        app_logger.exception("Database error while validating API key")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database error")
+    result = await db.execute(select(models.User).where(models.User.api_key == api_key))
+    current_user = result.scalars().first()
+
+    if current_user:
+        await current_user.update_last_seen()
+        await db.commit()
+        await db.refresh(current_user)
+        app_logger.info(f"User authenticated: id={current_user.id}")
+    else:
+        app_logger.error("Invalid API key")
+        raise HTTPException(status_code=403, detail={"result": False,
+                                                     "error_type": 403,
+                                                     "error_message": "Invalid API Key"})
+    return current_user
 
 
-async def check_unique_user(db: AsyncSession, username: str, email: str, api_key: str) -> None:
+async def check_unique_user(db: AsyncSession, username: str, email: str, api_key: str) -> bool | None:
     """Ensure username, email, and API key are unique."""
-    app_logger.debug("Checking uniqueness of user credentials")
-    try:
-        result = await db.execute(
-            select(models.User).where(
-                (models.User.username == username) |
-                (models.User.email == email) |
-                (models.User.api_key == api_key)
-            )
+    app_logger.debug("check_unique_user_for_create_new()")
+    result = await db.execute(
+        select(models.User).where(
+            (models.User.username == username) |
+            (models.User.email == email) |
+            (models.User.api_key == api_key)
         )
-        existing_user = result.scalars().first()
+    )
+    existing_user = result.scalars().first()
 
-        if existing_user:
-            conflict_field = "Username" if existing_user.username == username else \
-                "Email" if existing_user.email == email else "API Key"
-            app_logger.error(f"Conflict detected: {conflict_field} already registered")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"{conflict_field} already registered",
-            )
-    except Exception as e:
-        app_logger.exception("Database error while checking user uniqueness")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database error")
+    if existing_user:
+        return
+    return True
 
 
 async def upload_file_to_disk(dir_path: str, file_name: str, disk_folder_path: str, ya_token: str) -> bool:

@@ -3,7 +3,7 @@ from config.logging_config import logger
 from config.config import YANDEX_DISK_TOKEN, YANDEX_DISK_APP_FOLDER_PATH
 from .utils import (
     upload_file_to_disk, get_file_shareable_link, get_direct_link,
-    delete_folder_recursive, create_folder, get_current_user
+    delete_folder_recursive, create_folder, get_current_user_or_none
 )
 import os
 import uuid
@@ -12,7 +12,7 @@ from app import models
 from config.config import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 
-router = APIRouter(prefix="/api/medias", tags=["Medias"])
+medias_router = APIRouter(prefix="/api/medias", tags=["Medias"])
 app_logger = logger.bind(name="app")
 
 uploads_path = os.path.join(
@@ -21,7 +21,7 @@ uploads_path = os.path.join(
 )
 
 
-@router.post("/", status_code=status.HTTP_201_CREATED)
+@medias_router.post("/", status_code=status.HTTP_201_CREATED)
 async def download_media(
         file: UploadFile = File(...),
         db: AsyncSession = Depends(get_db),
@@ -29,10 +29,7 @@ async def download_media(
     """Loading the media file and its publication on Yandex.Disk"""
     app_logger.info(f"POST /api/medias (api_key={api_key})")
 
-    existing_user = await get_current_user(api_key, db)
-    if not existing_user:
-        app_logger.warning(f"403(Invalid API Key)")
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid API Key")
+    existing_user = await get_current_user_or_none(api_key, db)
 
     file_name = f"{uuid.uuid4()}_{file.filename}"
     user_folder = os.path.join(uploads_path, str(existing_user.id))
@@ -73,7 +70,6 @@ async def download_media(
             return {"result": True, "media_id": new_media.id}
 
         except Exception as e:
-            app_logger.error(f"Database error: {str(e)}")
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create media")
 
     except HTTPException as http_ex:
