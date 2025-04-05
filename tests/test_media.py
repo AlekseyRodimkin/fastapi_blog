@@ -5,15 +5,15 @@ import os
 tests_logger = logger.bind(name="tests")
 
 old_user = test_data["users"]["created"]
-new_tweet = test_data["tweets"]["new"]
+img = "img.jpeg"
 
 
-def test_create_tweet(added_test_user, test_client):
+def test_media_load(added_test_user, test_client):
     """
-    New tweet creation test
+    Test media upload endpoint
     Perhaps after the test it is necessary to remove the media from Ya.disk
     """
-    tests_logger.debug("test_create_tweet()")
+    tests_logger.debug("test_media_load()")
 
     test_dir_path = os.path.join(os.path.dirname(__file__), "test_files")
     file_names = [
@@ -42,26 +42,3 @@ def test_create_tweet(added_test_user, test_client):
             condition="result" in response_data and "media_id" in response_data,
             error_message="`result` and `media_id` not in response_data"
         )
-
-    response = test_client.post("/api/tweets", headers=old_user["headers"], json=new_tweet)
-    assert_and_log(function_name="test_create_tweet",
-                   condition=response.status_code == 201,
-                   error_message=f"{response.status_code} != 201")
-
-
-def test_delete_tweet_by_id(added_test_user, added_test_post, test_client):
-    """Tweet removal test"""
-    tests_logger.debug("test_delete_tweet_by_id()")
-
-    response = test_client.delete(
-        f"/api/tweets/{added_test_post.id}",
-        headers=old_user["headers"]
-    )
-
-    assert_and_log(
-        function_name="test_delete_tweet_by_id",
-        condition=response.status_code == 200,
-        error_message=f"{response.status_code} != 200"
-    )
-
-    # test cascade...

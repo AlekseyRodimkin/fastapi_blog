@@ -3,7 +3,7 @@ import sqlalchemy.orm as so
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from config.config import Base
-from typing import Optional
+from typing import Optional, Sequence
 
 followers = sa.Table(
     'followers',
@@ -99,22 +99,34 @@ class User(Base):
         return result.scalar()
 
     async def like_tweet(self, session: AsyncSession, tweet: "Tweet") -> None:
-        if tweet not in self.liked_tweets:
+        query = sa.select(sa.exists().where(
+            (likes.c.user_id == self.id) &
+            (likes.c.tweet_id == tweet.id)
+        ))
+        result = await session.execute(query)
+        already_liked = result.scalar()
+
+        if not already_liked:
             await session.execute(
                 likes.insert().values(user_id=self.id, tweet_id=tweet.id)
             )
-            self.liked_tweets.append(tweet)
-            tweet.liked_by.append(self)
             await session.commit()
 
     async def unlike_tweet(self, session: AsyncSession, tweet: "Tweet") -> None:
-        if tweet in self.liked_tweets:
+        query = sa.select(sa.exists().where(
+            (likes.c.user_id == self.id) &
+            (likes.c.tweet_id == tweet.id)
+        ))
+        result = await session.execute(query)
+        liked = result.scalar()
+
+        if liked:
             await session.execute(
-                likes.delete()
-                .where((likes.c.user_id == self.id) & (likes.c.tweet_id == tweet.id))
+                likes.delete().where(
+                    (likes.c.user_id == self.id) &
+                    (likes.c.tweet_id == tweet.id)
+                )
             )
-            self.liked_tweets.remove(tweet)
-            tweet.liked_by.remove(self)
             await session.commit()
 
     def __repr__(self):
@@ -125,6 +137,7 @@ class Media(Base):
     __tablename__ = "media"
     id: so.Mapped[int] = so.mapped_column(primary_key=True)
     image_link: so.Mapped[str] = so.mapped_column(sa.String(), nullable=False)
+    file_name: so.Mapped[str] = so.mapped_column(sa.String(), nullable=False)
     tweet_id: so.Mapped[int] = so.mapped_column(sa.ForeignKey("tweets.id", ondelete="CASCADE"), index=True,
                                                 nullable=True)
 
@@ -145,6 +158,13 @@ class Tweet(Base):
     author: so.Mapped[User] = so.relationship("User", back_populates="tweets")
     liked_by: so.Mapped[list[User]] = so.relationship("User", secondary=likes, back_populates="liked_tweets")
     tweet_media: so.Mapped[list[Media]] = so.relationship("Media", backref="tweet", passive_deletes=True)
+
+    async def set_tweet_media(self, db: AsyncSession, media: Sequence[Media]):
+        for m in media:
+            m.tweet_id = self.id
+
+        await db.flush()
+        await db.refresh(self)
 
     def __repr__(self):
         return f"<Tweet {self.id} by {self.user_id}>"

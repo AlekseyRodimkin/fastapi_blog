@@ -1,33 +1,32 @@
-from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from config.logging_config import logger
-
+from config.config import engine
 from .routes.medias import medias_router
 from .routes.tweets import tweets_router
 from .routes.users import users_router
+from . import models
+from . import events
+from fastapi import FastAPI
 
-app = FastAPI()
 app_logger = logger.bind(name="app")
 
-from config.config import engine
-from . import models
+app = FastAPI()
 
 
 @app.on_event("startup")
 async def startup():
     """Function before launching the app (create tables)"""
-    app_logger.debug("App is started")
+    app_logger.debug("🔝 App is started 🔝")
 
     async with engine.begin() as conn:
         await conn.run_sync(models.Base.metadata.create_all)
-
-        app_logger.debug("Tables are created")
+        app_logger.debug("🔄 Tables are created 🔄")
 
 
 @app.on_event("shutdown")
 async def shutdown():
     """Function before the end of the application (close connection, session)"""
-    app_logger.debug("App is stopped")
+    app_logger.debug("⤵️ App is stopped ⤵️")
     await engine.dispose()
 
 

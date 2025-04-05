@@ -5,10 +5,10 @@ from sqlalchemy.orm import selectinload
 from typing import List, Any, Dict
 from app import models
 from app.schemas import user_schema
-from app.routes.utils import get_current_user_or_none
+from app.services.utils import get_current_user_or_none
 from config.config import get_db
 from config.logging_config import logger
-from .utils import check_unique_user
+from app.services.utils import check_unique_user
 
 users_router = APIRouter(prefix="/api/users", tags=["Users"])
 app_logger = logger.bind(name="app")
@@ -20,7 +20,7 @@ async def create_user(
         db: AsyncSession = Depends(get_db),
         api_key: str = Header(..., convert_underscores=False)) -> user_schema.UserOut:
     """Function of the registration of a new user"""
-    app_logger.info(f"POST/api/users (api_key={api_key})")
+    app_logger.info(f"POST/api/users")
 
     try:
         if not await check_unique_user(db, user_data.username, user_data.email, api_key):
@@ -33,6 +33,9 @@ async def create_user(
         await db.commit()
         await db.refresh(new_user)
 
+        app_logger.info(f"User created successfully (user_id={new_user.id})")
+        return new_user
+
     except HTTPException as http_ex:
         app_logger.error(f"Error HTTP: {http_ex.detail}")
         raise http_ex
@@ -43,15 +46,12 @@ async def create_user(
                                                      "error_type": 500,
                                                      "error_message": "Failed to create user"})
 
-    app_logger.info(f"User created successfully (user_id={new_user.id})")
-    return new_user
-
 
 @users_router.get("/me", status_code=200, response_model=dict)
 async def get_authorized_user(db: AsyncSession = Depends(get_db),
                               api_key: str = Header(..., convert_underscores=False)) -> Dict[str, str | Dict[str, Any]]:
     """The function of obtaining an authorized user"""
-    app_logger.info(f"GET/api/users/me (api_key={api_key})")
+    app_logger.info(f"GET/api/users/me")
 
     try:
         result = await db.execute(
@@ -121,7 +121,7 @@ async def get_all_users(
         api_key: str = Header(..., convert_underscores=False)
 ) -> List[models.User]:
     """The function of obtaining all users"""
-    app_logger.info(f"GET/api/users (api_key={api_key})")
+    app_logger.info(f"GET/api/users")
 
     try:
         await get_current_user_or_none(api_key, db)
@@ -144,7 +144,7 @@ async def follow(
         db: AsyncSession = Depends(get_db),
         api_key: str = Header(..., convert_underscores=False)) -> Dict[str, bool]:
     """Follow func"""
-    app_logger.info(f"POST/api/users/{user_id}/follow (api_key={api_key})")
+    app_logger.info(f"POST/api/users/{user_id}/follow")
 
     try:
         existing_user = await get_current_user_or_none(api_key, db)
@@ -164,6 +164,8 @@ async def follow(
                                                          "error_message": "User not found"})
 
         await existing_user.follow(db, user)
+        app_logger.info(f"User id={existing_user.id} follow successfully id={user_id}")
+        return {"result": True}
 
     except HTTPException as http_ex:
         app_logger.error(f"Error HTTP: {http_ex.detail}")
@@ -175,9 +177,6 @@ async def follow(
                                                      "error_type": 500,
                                                      "error_message": "Failed to create follow"})
 
-    app_logger.info(f"User follow successfully")
-    return {"result": True}
-
 
 @users_router.delete("/{user_id}/unfollow", status_code=200)
 async def unfollow(
@@ -185,7 +184,7 @@ async def unfollow(
         db: AsyncSession = Depends(get_db),
         api_key: str = Header(..., convert_underscores=False)) -> Dict[str, bool]:
     """Unfollow func"""
-    app_logger.info(f"DELETE/api/users/{user_id}/unfollow (api_key={api_key})")
+    app_logger.info(f"DELETE/api/users/{user_id}/unfollow")
 
     try:
         existing_user = await get_current_user_or_none(api_key, db)
@@ -204,6 +203,8 @@ async def unfollow(
                                                          "error_type": 404,
                                                          "error_message": "User not found"})
         await existing_user.unfollow(db, user)
+        app_logger.info(f"User id={existing_user.id} unfollow successfully id={user_id}")
+        return {"result": True}
 
     except HTTPException as http_ex:
         app_logger.error(f"Error HTTP: {http_ex.detail}")
@@ -214,5 +215,3 @@ async def unfollow(
         raise HTTPException(status_code=500, detail={"result": False,
                                                      "error_type": 500,
                                                      "error_message": "Failed to create unfollow"})
-    app_logger.info(f"User unfollow successfully")
-    return {"result": True}

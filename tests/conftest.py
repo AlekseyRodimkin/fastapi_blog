@@ -35,9 +35,13 @@ test_data = {
         },
     },
     "tweets": {
-        "new": {
-            "tweet_data": "Test data1",
+        "created": {
+            "tweet_data": "Test body 1",
             "media_ids": []
+        },
+        "new": {
+            "tweet_data": "Test body 2",
+            "media_ids": [1,2,3]
         }
     }
 
@@ -78,16 +82,35 @@ async def added_test_user(db_session):
     from app.models import User
 
     async with db_session as session:
-        old_user = test_data["users"]["created"]
+        created_user = test_data["users"]["created"]
         test_user = User(
-            username=old_user["username"],
-            email=old_user["email"],
-            api_key=old_user["headers"]["api_key"],
+            username=created_user["username"],
+            email=created_user["email"],
+            api_key=created_user["headers"]["api_key"],
         )
         session.add(test_user)
         await session.commit()
         await session.refresh(test_user)
         yield test_user
+
+
+@pytest_asyncio.fixture(scope="function")
+async def added_test_post(db_session, added_test_user):
+    """Fixture for adding a test post before each test."""
+    tests_logger.debug("added_test_post()")
+
+    from app.models import Tweet
+    created_post = test_data["tweets"]["created"]
+
+    test_post = Tweet(
+        tweet_data=created_post["tweet_data"],
+        user_id=added_test_user.id
+    )
+    db_session.add(test_post)
+    await db_session.flush()
+    await db_session.refresh(test_post)
+
+    yield test_post
 
 
 @pytest_asyncio.fixture(scope="function")

@@ -2,6 +2,7 @@ import os
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 from dotenv import load_dotenv, find_dotenv
+from celery import Celery
 
 if not find_dotenv():
     exit("Not exists .env")
@@ -25,6 +26,19 @@ DATABASE_URL = f"postgresql+asyncpg://{DB_USER}:{DB_PASSWORD}@localhost:5432/{DB
 engine = create_async_engine(DATABASE_URL, echo=True)
 async_session = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 Base = declarative_base()
+
+celery_app = Celery(
+    "fastapi_app",
+    broker='redis://localhost:6379/0',
+    backend='redis://localhost:6379/0',
+    include=['app.services.yandex']
+)
+
+celery_app.conf.update(
+    broker_connection_retry_on_startup=True,
+    broker_connection_retry=True,
+)
+
 
 
 async def init_db():
