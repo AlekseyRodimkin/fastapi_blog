@@ -1,12 +1,9 @@
 from fastapi import APIRouter, HTTPException, File, UploadFile, Depends, Header
-from config.logging_config import logger
-from config.config import YANDEX_DISK_TOKEN, YANDEX_DISK_APP_FOLDER_PATH, get_db
-from app.services.yandex import upload_file_to_disk, get_file_shareable_link, get_direct_link
-from app.services.utils import delete_folder_recursive, create_folder, get_current_user_or_none
+from app import logger, YANDEX_DISK_TOKEN, YANDEX_DISK_APP_FOLDER_PATH, get_db, delete_folder_recursive, create_folder, \
+    user_by_api_key, Media, upload_file_to_disk, get_file_shareable_link, get_direct_link
 import os
 import uuid
 import aiofiles
-from app import models
 from sqlalchemy.ext.asyncio import AsyncSession
 
 medias_router = APIRouter(prefix="/api/medias", tags=["Medias"])
@@ -18,7 +15,7 @@ uploads_path = os.path.join(
 )
 
 
-@medias_router.post("/", status_code=201)
+@medias_router.post("/", status_code=201, response_model=dict)
 async def download_media(
         file: UploadFile = File(...),
         db: AsyncSession = Depends(get_db),
@@ -27,7 +24,7 @@ async def download_media(
     app_logger.info(f"POST /api/medias")
 
     try:
-        existing_user = await get_current_user_or_none(api_key, db)
+        existing_user = await user_by_api_key(api_key=api_key, db=db)
 
         file_name = f"{uuid.uuid4()}_{file.filename}"
         user_folder = os.path.join(uploads_path, str(existing_user.id))
@@ -58,7 +55,7 @@ async def download_media(
             raise Exception("Failed to get direct link")
 
         try:
-            new_media = models.Media(image_link=direct_url, file_name=file_name)
+            new_media = Media(image_link=direct_url, file_name=file_name)
             db.add(new_media)
             await db.commit()
             await db.refresh(new_media)

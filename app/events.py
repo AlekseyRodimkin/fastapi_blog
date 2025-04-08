@@ -1,5 +1,5 @@
 from sqlalchemy import event
-from app.models import Tweet
+from app import Tweet
 from config.logging_config import logger
 from celery import group
 

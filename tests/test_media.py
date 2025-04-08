@@ -33,7 +33,7 @@ def test_media_load(added_test_user, test_client):
         assert_and_log(
             function_name="test_media_load",
             condition=response.status_code == 201,
-            error_message=f"response.status_code != 201"
+            error_message=f"{response.status_code} != 201"
         )
 
         response_data = response.json()

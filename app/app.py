@@ -1,9 +1,7 @@
 from fastapi.middleware.cors import CORSMiddleware
 from config.logging_config import logger
 from config.config import engine
-from .routes.medias import medias_router
-from .routes.tweets import tweets_router
-from .routes.users import users_router
+from .routes import users_router, medias_router, tweets_router
 from . import models
 from . import events
 from fastapi import FastAPI

@@ -1,207 +1,168 @@
 from celery import group
-from fastapi import APIRouter, Depends, HTTPException, Header, Body
+from fastapi import APIRouter, Depends, HTTPException, Header, Body, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from config.logging_config import logger
-from config.config import get_db, YANDEX_DISK_APP_FOLDER_PATH
-from app.models import Media, Tweet
-from app.schemas import tweet_schema
-from app.services.utils import get_current_user_or_none
-from app.services.yandex import celery_task_delete_media
-from typing import Dict
+from app import logger, get_db, YANDEX_DISK_APP_FOLDER_PATH, Tweet, TweetCreate, TweetCreateResponse, TweetListResponse, \
+    Like, TweetResponse, Author, celery_task_delete_media, tweet_by_id, tweets_by_user_ids, tweet_by_id_with_details, \
+    exception_handler, user_by_api_key, get_media_by_ids, get_media_by_user_id_tweet_id
 
 tweets_router = APIRouter(prefix="/api/tweets", tags=["Tweets"])
 app_logger = logger.bind(name="app")
 
 
-@tweets_router.post("/", status_code=201, response_model=tweet_schema.TweetCreateResponse)
+@tweets_router.post("/", status_code=201, response_model=TweetCreateResponse)
+@exception_handler()
 async def create_new_tweet(
-        tweet_in: tweet_schema.TweetCreate = Body(...),
+        tweet_in: TweetCreate = Body(...),
         db: AsyncSession = Depends(get_db),
-        api_key: str = Header(..., convert_underscores=False)) -> Dict[str, bool | int]:
+        api_key: str = Header(..., convert_underscores=False)):
     """Create new tweet func"""
     app_logger.info(f"POST/api/tweets")
 
-    try:
-        current_user = await get_current_user_or_none(api_key, db)
+    current_user = await user_by_api_key(api_key=api_key, db=db)
+    if not tweet_in.tweet_data and not tweet_in.media_ids:
+        raise HTTPException(
+            status_code=400,
+            detail={"result": False,
+                    "error_type": 400,
+                    "error_message": "Tweet text or media required"}
+        )
+    new_tweet = Tweet(tweet_data=tweet_in.tweet_data, user_id=current_user.id)
+    db.add(new_tweet)
+    await db.flush()
 
-        if not tweet_in.tweet_data and not tweet_in.media_ids:
+    if tweet_in.media_ids:
+        media_list = await get_media_by_ids(db=db, ids=tweet_in.media_ids)
+        found_ids = {m.id for m in media_list}
+        if len(found_ids) != len(tweet_in.media_ids):
+            missing = set(tweet_in.media_ids) - found_ids
             raise HTTPException(
                 status_code=400,
                 detail={"result": False,
                         "error_type": 400,
-                        "error_message": "Tweet text or media required"}
+                        "error_message": f"Media not found: {missing}"}
             )
+        await new_tweet.set_tweet_media(db=db, media=media_list)
 
-        new_tweet = Tweet(
-            tweet_data=tweet_in.tweet_data,
-            user_id=current_user.id
+    await db.commit()
+    app_logger.info(f"Tweet {new_tweet.id} created successfully by user {current_user.id}")
+    return {"result": True, "tweet_id": new_tweet.id}
+
+
+@tweets_router.get("/", status_code=200, response_model=TweetListResponse)
+@exception_handler()
+async def get_tweets(
+        db: AsyncSession = Depends(get_db),
+        api_key: str = Header(..., convert_underscores=False),
+        limit: int = Query(10, ge=1, le=30),
+        offset: int = Query(0, ge=0)):
+    """Get tweets func"""
+    app_logger.info(f"GET/api/tweets")
+
+    current_user = await user_by_api_key(api_key=api_key, db=db, _with="following")
+    followed_ids = [u.id for u in current_user.following]
+    if not followed_ids:
+        return TweetListResponse(result=True, tweets=[])
+
+    tweets = await tweets_by_user_ids(db, followed_ids, limit, offset)
+    tweets_data = []
+    for tweet in tweets:
+        attachments = [media.image_link for media in tweet.tweet_media]
+        likes_data = [
+            Like(user_id=user.id, name=user.username)
+            for user in tweet.liked_by
+        ]
+        tweets_data.append(
+            TweetResponse(
+                id=tweet.id,
+                content=tweet.tweet_data or "",
+                attachments=attachments,
+                author=Author(id=tweet.author.id, name=tweet.author.username),
+                likes=likes_data
+            )
         )
-        db.add(new_tweet)
-        await db.flush()
+    return TweetListResponse(result=True, tweets=tweets_data)
 
-        if tweet_in.media_ids:
-            result = await db.execute(
-                select(Media)
-                .where(Media.id.in_(tweet_in.media_ids))
-                .where(Media.tweet_id.is_(None))
-            )
-            media_list = result.scalars().all()
 
-            found_ids = {m.id for m in media_list}
-            if len(found_ids) != len(tweet_in.media_ids):
-                missing = set(tweet_in.media_ids) - found_ids
-                raise HTTPException(
-                    status_code=400,
-                    detail={"result": False,
-                            "error_type": 400,
-                            "error_message": f"Media not found: {missing}"}
-                )
+@tweets_router.get("/{tweet_id}", status_code=200, response_model=TweetResponse)
+@exception_handler()
+async def get_tweet_by_id(
+        tweet_id: int,
+        db: AsyncSession = Depends(get_db),
+        api_key: str = Header(..., convert_underscores=False)):
+    """Get tweet by id func"""
+    app_logger.info(f"GET/api/tweets")
 
-            await new_tweet.set_tweet_media(db=db, media=media_list)
-
-        await db.commit()
-        app_logger.info(f"Tweet {new_tweet.id} created successfully by user {current_user.id}")
-
-        return {"result": True, "tweet_id": new_tweet.id}
-
-    except HTTPException as http_ex:
-        app_logger.error(f"Error HTTP: {http_ex.detail}")
-        raise http_ex
-    except Exception as e:
-        app_logger.error(f"Database error: {str(e)}")
-        await db.rollback()
-        raise HTTPException(status_code=500, detail={"result": False,
-                                                     "error_type": 500,
-                                                     "error_message": "Failed to create new tweet"})
+    await user_by_api_key(api_key=api_key, db=db)
+    tweet = await tweet_by_id_with_details(db=db, tweet_id=tweet_id)
+    attachments = [media.image_link for media in tweet.tweet_media]
+    likes_data = [
+        Like(user_id=user.id, name=user.username)
+        for user in tweet.liked_by
+    ]
+    return TweetResponse(
+        id=tweet.id,
+        content=tweet.tweet_data or "",
+        attachments=attachments,
+        author=Author(id=tweet.author.id, name=tweet.author.username),
+        likes=likes_data
+    )
 
 
 @tweets_router.delete("/{tweet_id}", status_code=200)
+@exception_handler()
 async def delete_tweet_by_id(
         tweet_id: int,
         db: AsyncSession = Depends(get_db),
-        api_key: str = Header(..., convert_underscores=False)) -> Dict[str, bool | int]:
+        api_key: str = Header(..., convert_underscores=False)):
     """Delete tweet by id func"""
     app_logger.info(f"DELETE/api/tweets/{tweet_id}")
 
-    try:
-        current_user = await get_current_user_or_none(api_key, db)
+    current_user = await user_by_api_key(api_key, db)
+    # File deletion
+    media_files = await get_media_by_user_id_tweet_id(db=db, user_id=current_user.id, tweet_id=tweet_id)
+    file_paths = [f"{YANDEX_DISK_APP_FOLDER_PATH[5:]}/{media.file_name}" for media in media_files]
 
-        # File deletion
-        medias_result = await db.execute(
-            select(Media)
-            .join(Tweet)
-            .where(Media.tweet_id == tweet_id)
-            .where(Tweet.user_id == current_user.id)
-        )
-        media_files = medias_result.scalars().all()
+    if file_paths:
+        app_logger.debug(f"Triggering Celery tasks for files deletion: {file_paths}")
+        task_group = group(celery_task_delete_media.s(file_path) for file_path in file_paths)
+        task_group.apply_async()
 
-        file_paths = [f"{YANDEX_DISK_APP_FOLDER_PATH[5:]}/{media.file_name}" for media in media_files]
+    # Tweet deletion
+    tweet = await tweet_by_id(tweet_id=tweet_id, db=db, user_id=current_user.id)
+    await db.delete(tweet)
+    await db.commit()
 
-        if file_paths:
-            app_logger.debug(f"Triggering Celery tasks for files deletion: {file_paths}")
-            task_group = group(celery_task_delete_media.s(file_path) for file_path in file_paths)
-            task_group.apply_async()
-
-        # Tweet deletion
-        tweet_result = await db.execute(
-            select(Tweet)
-            .where(Tweet.id == tweet_id)
-            .where(Tweet.user_id == current_user.id)
-        )
-        tweet = tweet_result.scalars().first()
-
-        if not tweet:
-            raise HTTPException(status_code=404, detail={"result": False,
-                                                         "error_type": 404,
-                                                         "error_message": f"Tweet not found: {tweet_id}"})
-
-        await db.delete(tweet)
-        await db.commit()
-
-        app_logger.info(f"Tweet {tweet_id} deleted successfully by user {current_user.id}")
-        return {"result": True}
-
-    except HTTPException as http_ex:
-        app_logger.error(f"Error HTTP: {http_ex.detail}")
-        raise http_ex
-    except Exception as e:
-        app_logger.error(f"Database error: {str(e)}")
-        await db.rollback()
-        raise HTTPException(status_code=500, detail={"result": False,
-                                                     "error_type": 500,
-                                                     "error_message": "Failed to create new tweet"})
+    app_logger.info(f"Tweet {tweet_id} deleted successfully by user {current_user.id}")
+    return {"result": True}
 
 
 @tweets_router.post("/{tweet_id}/likes", status_code=201, response_model=dict)
+@exception_handler()
 async def like_tweet_by_id(
         tweet_id: int,
         db: AsyncSession = Depends(get_db),
-        api_key: str = Header(..., convert_underscores=False)) -> Dict[str, bool | int]:
+        api_key: str = Header(..., convert_underscores=False)):
     """Like tweet by id func"""
     app_logger.info(f"POST/api/tweets/{tweet_id}/like")
 
-    try:
-        current_user = await get_current_user_or_none(api_key, db)
-
-        tweet_result = await db.execute(
-            select(Tweet)
-            .where(Tweet.id == tweet_id)
-            .where(Tweet.user_id == current_user.id)
-        )
-        tweet = tweet_result.scalars().first()
-        if not tweet:
-            raise HTTPException(status_code=404, detail={"result": False,
-                                                         "error_type": 404,
-                                                         "error_message": f"Tweet not found: {tweet_id}"})
-
-        await current_user.like_tweet(session=db, tweet=tweet)
-        app_logger.info(f"Tweet {tweet.id} liked successfully by user {current_user.id}")
-        return {"result": True}
-
-    except HTTPException as http_ex:
-        app_logger.error(f"Error HTTP: {http_ex.detail}")
-        raise http_ex
-    except Exception as e:
-        app_logger.error(f"Database error: {str(e)}")
-        await db.rollback()
-        raise HTTPException(status_code=500, detail={"result": False,
-                                                     "error_type": 500,
-                                                     "error_message": "Failed to like tweet"})
+    current_user = await user_by_api_key(api_key, db)
+    tweet = await tweet_by_id(tweet_id=tweet_id, db=db)
+    await current_user.like_tweet(session=db, tweet=tweet)
+    app_logger.info(f"Tweet {tweet.id} liked successfully by user {current_user.id}")
+    return {"result": True}
 
 
 @tweets_router.delete("/{tweet_id}/likes", status_code=200, response_model=dict)
+@exception_handler()
 async def delete_like_tweet_by_id(
         tweet_id: int,
         db: AsyncSession = Depends(get_db),
-        api_key: str = Header(..., convert_underscores=False)) -> Dict[str, bool | int]:
+        api_key: str = Header(..., convert_underscores=False)):
     """Delete like tweet by id func"""
     app_logger.info(f"DELETE/api/tweets/{tweet_id}/like")
 
-    try:
-        current_user = await get_current_user_or_none(api_key, db)
-
-        tweet_result = await db.execute(
-            select(Tweet)
-            .where(Tweet.id == tweet_id)
-            .where(Tweet.user_id == current_user.id)
-        )
-        tweet = tweet_result.scalars().first()
-        if not tweet:
-            raise HTTPException(status_code=404, detail={"result": False,
-                                                         "error_type": 404,
-                                                         "error_message": f"Tweet not found: {tweet_id}"})
-
-        await current_user.unlike_tweet(session=db, tweet=tweet)
-        app_logger.info(f"Tweet {tweet.id} like delete successfully by user {current_user.id}")
-        return {"result": True}
-
-    except HTTPException as http_ex:
-        app_logger.error(f"Error HTTP: {http_ex.detail}")
-        raise http_ex
-    except Exception as e:
-        app_logger.error(f"Database error: {str(e)}")
-        await db.rollback()
-        raise HTTPException(status_code=500, detail={"result": False,
-                                                     "error_type": 500,
-                                                     "error_message": "Failed to like tweet"})
+    current_user = await user_by_api_key(api_key, db)
+    tweet = await tweet_by_id(tweet_id=tweet_id, db=db)
+    await current_user.unlike_tweet(session=db, tweet=tweet)
+    app_logger.info(f"Tweet {tweet.id} like delete successfully by user {current_user.id}")
+    return {"result": True}

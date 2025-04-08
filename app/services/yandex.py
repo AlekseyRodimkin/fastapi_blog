@@ -48,12 +48,8 @@ async def upload_file_to_disk(dir_path: str, file_name: str, disk_folder_path: s
         return False
 
 
-async def get_file_shareable_link(
-        file_path: str,
-        ya_token: str,
-        max_retries: int = 3,
-        retry_delay: float = 1.0
-) -> str | None:
+async def get_file_shareable_link(file_path: str, ya_token: str, max_retries: int = 3,
+                                  retry_delay: float = 1.0) -> str | None:
     """Get a shareable link for a file on Yandex Disk with retry logic."""
     publish_url = "https://cloud-api.yandex.net/v1/disk/resources/publish"
     meta_url = "https://cloud-api.yandex.net/v1/disk/resources"

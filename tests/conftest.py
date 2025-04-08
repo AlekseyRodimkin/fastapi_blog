@@ -31,7 +31,8 @@ test_data = {
         },
         "new": {
             "headers": {"api_key": "key2"},
-            "data": {"username": "test_user_2", "email": "test2@example.com"}
+            "username": "test_user_2",
+            "email": "test2@example.com"
         },
     },
     "tweets": {
@@ -41,7 +42,7 @@ test_data = {
         },
         "new": {
             "tweet_data": "Test body 2",
-            "media_ids": [1,2,3]
+            "media_ids": [1, 2, 3]
         }
     }
 
@@ -92,6 +93,26 @@ async def added_test_user(db_session):
         await session.commit()
         await session.refresh(test_user)
         yield test_user
+
+
+@pytest_asyncio.fixture(scope="function")
+async def added_second_test_user(db_session):
+    """Fixture for adding a second test user before each test."""
+    tests_logger.debug("added_second_test_user()")
+
+    from app.models import User
+
+    async with db_session as session:
+        user = test_data["users"]["new"]
+        second_test_user = User(
+            username=user["username"],
+            email=user["email"],
+            api_key=user["headers"]["api_key"],
+        )
+        session.add(second_test_user)
+        await session.commit()
+        await session.refresh(second_test_user)
+        yield second_test_user
 
 
 @pytest_asyncio.fixture(scope="function")

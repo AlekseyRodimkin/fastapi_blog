@@ -1,12 +1,35 @@
-from pydantic import BaseModel, Field
-from typing import Optional
+from pydantic import BaseModel
+from typing import List, Optional
 
 
 class TweetCreate(BaseModel):
-    tweet_data: Optional[str] = Field(None, max_length=1000, example="X is cool")
+    tweet_data: Optional[str]
     media_ids: Optional[list[int]]
 
 
 class TweetCreateResponse(BaseModel):
     result: bool
     tweet_id: int
+
+
+class Like(BaseModel):
+    user_id: int
+    name: str
+
+
+class Author(BaseModel):
+    id: int
+    name: str
+
+
+class TweetResponse(BaseModel):
+    id: int
+    content: str
+    attachments: List[str]
+    author: Author
+    likes: List[Like]
+
+
+class TweetListResponse(BaseModel):
+    result: bool
+    tweets: List[TweetResponse]

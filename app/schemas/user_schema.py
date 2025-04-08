@@ -1,6 +1,5 @@
-from pydantic import BaseModel, ConfigDict, field_serializer, field_validator
-from typing import Optional
-from datetime import datetime, timezone
+from pydantic import BaseModel
+from typing import List, Optional
 
 
 class BaseUser(BaseModel):
@@ -9,35 +8,32 @@ class BaseUser(BaseModel):
     about_me: Optional[str] = None
 
 
-class UserIn(BaseUser):
-    ...
-
-
-class UserOut(BaseUser):
+class UserCreateResponse(BaseModel):
+    result: bool
     id: int
-    last_seen: datetime
-
-    model_config = ConfigDict(from_attributes=True)
-
-    @field_serializer('last_seen')
-    def serialize_last_seen(self, last_seen: datetime, _info):
-        return last_seen.astimezone(timezone.utc).isoformat()
 
 
-class FollowerOut(BaseModel):
+class Other(BaseModel):
     id: int
     username: str
 
 
-class UserWithRelations(UserOut):
-    followers: list[FollowerOut] = []
-    following: list[FollowerOut] = []
+class UserWithRelations(BaseModel):
+    id: int
+    username: str
+    followers: List[Other]
+    following: List[Other]
 
-    @field_validator('followers', 'following', mode='before')
-    def convert_user_objects(cls, v):
-        return [
-            {"id": user.id, "username": user.username}
-            for user in v
-        ]
 
-    model_config = ConfigDict(from_attributes=True)
+class UserResponse(BaseModel):
+    result: bool
+    user: UserWithRelations
+
+
+class UserFull(BaseUser):
+    id: int
+
+
+class UserListResponse(BaseModel):
+    result: bool
+    users: List[UserFull]

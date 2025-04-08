@@ -1,184 +1,118 @@
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
-from typing import List, Any, Dict
-from app import models
-from app.schemas import user_schema
-from app.services.utils import get_current_user_or_none
-from config.config import get_db
-from config.logging_config import logger
-from app.services.utils import check_unique_user
+from typing import Dict
+from app import UserCreateResponse, UserWithRelations, UserResponse, Other, BaseUser, UserFull, \
+    UserListResponse, User, logger, get_db, exception_handler, user_by_api_key, user_by_id, check_unique_user, get_users
 
 users_router = APIRouter(prefix="/api/users", tags=["Users"])
 app_logger = logger.bind(name="app")
 
 
-@users_router.post("/", status_code=201, response_model=user_schema.UserOut)
+@users_router.post("/", status_code=201, response_model=UserCreateResponse)
+@exception_handler()
 async def create_user(
-        user_data: user_schema.UserIn,
+        user_data: BaseUser,
         db: AsyncSession = Depends(get_db),
-        api_key: str = Header(..., convert_underscores=False)) -> user_schema.UserOut:
+        api_key: str = Header(..., convert_underscores=False)):
     """Function of the registration of a new user"""
     app_logger.info(f"POST/api/users")
 
-    try:
-        if not await check_unique_user(db, user_data.username, user_data.email, api_key):
-            raise HTTPException(status_code=400, detail={"result": False,
-                                                         "error_type": 400,
-                                                         "error_message": f"Name/email/api_key already registered"})
-        new_user = models.User(**user_data.model_dump())
-        await new_user.set_api_key(api_key=api_key)
-        db.add(new_user)
-        await db.commit()
-        await db.refresh(new_user)
+    if not await check_unique_user(db, user_data.username, user_data.email, api_key):
+        raise HTTPException(status_code=400, detail={"result": False,
+                                                     "error_type": 400,
+                                                     "error_message": f"Already registered"})
+    new_user = User(**user_data.model_dump())
+    await new_user.set_api_key(api_key=api_key)
+    db.add(new_user)
+    await db.commit()
+    await db.refresh(new_user)
 
-        app_logger.info(f"User created successfully (user_id={new_user.id})")
-        return new_user
-
-    except HTTPException as http_ex:
-        app_logger.error(f"Error HTTP: {http_ex.detail}")
-        raise http_ex
-    except Exception as e:
-        app_logger.error(f"Database error: {str(e)}")
-        await db.rollback()
-        raise HTTPException(status_code=500, detail={"result": False,
-                                                     "error_type": 500,
-                                                     "error_message": "Failed to create user"})
+    app_logger.info(f"User created successfully (user_id={new_user.id})")
+    return {"result": True, "id": new_user.id}
 
 
-@users_router.get("/me", status_code=200, response_model=dict)
+@users_router.get("/me", status_code=200, response_model=UserResponse)
+@exception_handler()
 async def get_authorized_user(db: AsyncSession = Depends(get_db),
-                              api_key: str = Header(..., convert_underscores=False)) -> Dict[str, str | Dict[str, Any]]:
+                              api_key: str = Header(..., convert_underscores=False)):
     """The function of obtaining an authorized user"""
     app_logger.info(f"GET/api/users/me")
 
-    try:
-        result = await db.execute(
-            select(models.User)
-            .where(models.User.api_key == api_key)
-            .options(selectinload(models.User.followers), selectinload(models.User.following))
-        )
-        user = result.scalars().first()
-
-        if not user:
-            app_logger.error(f"403(Invalid API Key)")
-            raise HTTPException(status_code=403, detail={"result": False,
-                                                         "error_type": 403,
-                                                         "error_message": "Invalid API Key"})
-
-        return {
-            "result": "true",
-            "user": user_schema.UserWithRelations.model_validate(user).model_dump()
-        }
-
-    except HTTPException as http_ex:
-        app_logger.error(f"Error HTTP: {http_ex.detail}")
-        raise http_ex
-    except Exception as e:
-        app_logger.error(f"Database error: {str(e)}")
-        raise HTTPException(status_code=500, detail={"result": False,
-                                                     "error_type": 500,
-                                                     "error_message": "Failed to get current user"})
+    user = await user_by_api_key(api_key=api_key, db=db, _with="all")
+    user_response = UserWithRelations(
+        id=user.id,
+        username=user.username,
+        followers=[Other(id=f.id, username=f.username) for f in user.followers],
+        following=[Other(id=f.id, username=f.username) for f in user.following]
+    )
+    return UserResponse(result=True, user=user_response)
 
 
-@users_router.get("/{user_id}", status_code=200, response_model=dict)
-async def get_user_by_id(user_id: int, db: AsyncSession = Depends(get_db)) -> Dict[str, str | Dict[str, Any]]:
+@users_router.get("/{user_id}", status_code=200, response_model=UserResponse)
+@exception_handler()
+async def get_user_by_id(user_id: int, db: AsyncSession = Depends(get_db)):
     """The function of obtaining a user by ID"""
     app_logger.info(f"GET/api/users/{user_id}")
 
-    try:
-        result = await db.execute(
-            select(models.User)
-            .where(models.User.id == user_id)
-            .options(selectinload(models.User.followers), selectinload(models.User.following))
-        )
-        user = result.scalars().first()
-
-        if user is None:
-            raise HTTPException(status_code=404, detail={"result": False,
-                                                         "error_type": 404,
-                                                         "error_message": "User not found"})
-
-        return {
-            "result": "true",
-            "user": user_schema.UserWithRelations.model_validate(user).model_dump()
-        }
-
-    except HTTPException as http_ex:
-        app_logger.error(f"Error HTTP: {http_ex.detail}")
-        raise http_ex
-    except Exception as e:
-        app_logger.error(f"Database error: {str(e)}")
-        raise HTTPException(status_code=500, detail={"result": False,
-                                                     "error_type": 500,
-                                                     "error_message": "Failed to get user"})
+    user = await user_by_id(user_id=user_id, db=db, _with="all")
+    user_response = UserWithRelations(
+        id=user.id,
+        username=user.username,
+        followers=[Other(id=f.id, username=f.username) for f in user.followers],
+        following=[Other(id=f.id, username=f.username) for f in user.following]
+    )
+    return UserResponse(result=True, user=user_response)
 
 
-@users_router.get("/", status_code=200, response_model=List[user_schema.UserOut])
+@users_router.get("/", status_code=200, response_model=UserListResponse)
+@exception_handler()
 async def get_all_users(
         db: AsyncSession = Depends(get_db),
-        api_key: str = Header(..., convert_underscores=False)
-) -> List[models.User]:
+        api_key: str = Header(..., convert_underscores=False),
+        limit: int = Query(10, ge=1, le=30),
+        offset: int = Query(0, ge=0)):
     """The function of obtaining all users"""
     app_logger.info(f"GET/api/users")
 
-    try:
-        await get_current_user_or_none(api_key, db)
-        result = await db.execute(select(models.User))
-        return result.scalars().all()
+    await user_by_api_key(api_key=api_key, db=db)
+    users = await get_users(db=db, limit=limit, offset=offset)
+    users_data = []
+    for u in users:
+        users_data.append(
+            UserFull(
+                id=u.id,
+                username=u.username,
+                about_me=u.about_me,
+                email=u.email
+            )
+        )
 
-    except HTTPException as http_ex:
-        app_logger.error(f"Error HTTP: {http_ex.detail}")
-        raise http_ex
-    except Exception as e:
-        app_logger.error(f"Database error: {str(e)}")
-        raise HTTPException(status_code=500, detail={"result": False,
-                                                     "error_type": 500,
-                                                     "error_message": "Failed to get all users"})
+    return UserListResponse(result=True, users=users_data)
 
 
 @users_router.post("/{user_id}/follow", status_code=201)
+@exception_handler()
 async def follow(
         user_id: int,
         db: AsyncSession = Depends(get_db),
-        api_key: str = Header(..., convert_underscores=False)) -> Dict[str, bool]:
+        api_key: str = Header(..., convert_underscores=False)):
     """Follow func"""
     app_logger.info(f"POST/api/users/{user_id}/follow")
 
-    try:
-        existing_user = await get_current_user_or_none(api_key, db)
+    existing_user = await user_by_api_key(api_key=api_key, db=db)
 
-        if existing_user.id == user_id:
-            raise HTTPException(status_code=400, detail={"result": False,
-                                                         "error_type": 400,
-                                                         "error_message": "Invalid user_id"})
-        result = await db.execute(
-            select(models.User).where(models.User.id == user_id)
-        )
-        user = result.scalars().first()
-
-        if user is None:
-            raise HTTPException(status_code=404, detail={"result": False,
-                                                         "error_type": 404,
-                                                         "error_message": "User not found"})
-
-        await existing_user.follow(db, user)
-        app_logger.info(f"User id={existing_user.id} follow successfully id={user_id}")
-        return {"result": True}
-
-    except HTTPException as http_ex:
-        app_logger.error(f"Error HTTP: {http_ex.detail}")
-        raise http_ex
-    except Exception as e:
-        app_logger.error(f"Database error: {str(e)}")
-        await db.rollback()
-        raise HTTPException(status_code=500, detail={"result": False,
-                                                     "error_type": 500,
-                                                     "error_message": "Failed to create follow"})
+    if existing_user.id == user_id:
+        raise HTTPException(status_code=400, detail={"result": False,
+                                                     "error_type": 400,
+                                                     "error_message": "Invalid user_id"})
+    user = await user_by_id(user_id=user_id, db=db)
+    await existing_user.follow(db, user)
+    app_logger.info(f"User id={existing_user.id} follow successfully id={user_id}")
+    return {"result": True}
 
 
 @users_router.delete("/{user_id}/unfollow", status_code=200)
+@exception_handler()
 async def unfollow(
         user_id: int,
         db: AsyncSession = Depends(get_db),
@@ -186,32 +120,13 @@ async def unfollow(
     """Unfollow func"""
     app_logger.info(f"DELETE/api/users/{user_id}/unfollow")
 
-    try:
-        existing_user = await get_current_user_or_none(api_key, db)
+    existing_user = await user_by_api_key(api_key=api_key, db=db)
 
-        if existing_user.id == user_id:
-            raise HTTPException(status_code=400, detail={"result": False,
-                                                         "error_type": 400,
-                                                         "error_message": "Invalid user_id"})
-        result = await db.execute(
-            select(models.User).where(models.User.id == user_id)
-        )
-        user = result.scalars().first()
-
-        if user is None:
-            raise HTTPException(status_code=404, detail={"result": False,
-                                                         "error_type": 404,
-                                                         "error_message": "User not found"})
-        await existing_user.unfollow(db, user)
-        app_logger.info(f"User id={existing_user.id} unfollow successfully id={user_id}")
-        return {"result": True}
-
-    except HTTPException as http_ex:
-        app_logger.error(f"Error HTTP: {http_ex.detail}")
-        raise http_ex
-    except Exception as e:
-        app_logger.error(f"Database error: {str(e)}")
-        await db.rollback()
-        raise HTTPException(status_code=500, detail={"result": False,
-                                                     "error_type": 500,
-                                                     "error_message": "Failed to create unfollow"})
+    if existing_user.id == user_id:
+        raise HTTPException(status_code=400, detail={"result": False,
+                                                     "error_type": 400,
+                                                     "error_message": "Invalid user_id"})
+    user = await user_by_id(user_id=user_id, db=db)
+    await existing_user.unfollow(db, user)
+    app_logger.info(f"User id={existing_user.id} unfollow successfully id={user_id}")
+    return {"result": True}
