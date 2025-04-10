@@ -1,25 +1,39 @@
-from fastapi import APIRouter, HTTPException, File, UploadFile, Depends, Header
-from app import logger, YANDEX_DISK_TOKEN, YANDEX_DISK_APP_FOLDER_PATH, get_db, delete_folder_recursive, create_folder, \
-    user_by_api_key, Media, upload_file_to_disk, get_file_shareable_link, get_direct_link
 import os
 import uuid
+
 import aiofiles
+from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app import (
+    YANDEX_DISK_APP_FOLDER_PATH,
+    YANDEX_DISK_TOKEN,
+    Media,
+    create_folder,
+    delete_folder_recursive,
+    get_db,
+    get_direct_link,
+    get_file_shareable_link,
+    logger,
+    upload_file_to_disk,
+    user_by_api_key,
+)
 
 medias_router = APIRouter(prefix="/api/medias", tags=["Medias"])
 app_logger = logger.bind(name="app")
 
 uploads_path = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "uploads"
+    "uploads",
 )
 
 
 @medias_router.post("/", status_code=201, response_model=dict)
 async def download_media(
-        file: UploadFile = File(...),
-        db: AsyncSession = Depends(get_db),
-        api_key: str = Header(..., convert_underscores=False)):
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Header(..., convert_underscores=False),
+):
     """Media file download and publication on Yandex.Disk"""
     app_logger.info(f"POST /api/medias")
 
@@ -38,7 +52,9 @@ async def download_media(
         app_logger.info(f"File saved locally: {file_path}")
 
         try:
-            uploaded = await upload_file_to_disk(user_folder, file_name, YANDEX_DISK_APP_FOLDER_PATH, YANDEX_DISK_TOKEN)
+            uploaded = await upload_file_to_disk(
+                user_folder, file_name, YANDEX_DISK_APP_FOLDER_PATH, YANDEX_DISK_TOKEN
+            )
             if not uploaded:
                 app_logger.error("Yandex.Disk upload failed")
                 raise Exception
@@ -76,7 +92,4 @@ async def download_media(
 
     except Exception as e:
         app_logger.exception(f"Critical error: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail={"result": False}
-        )
+        raise HTTPException(status_code=500, detail={"result": False})

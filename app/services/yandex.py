@@ -1,15 +1,19 @@
 import asyncio
 import os
-from config.logging_config import logger
-import aiohttp
-from config.config import YANDEX_DISK_TOKEN, celery_app
-import requests
 import time
+
+import aiohttp
+import requests
+
+from config.config import YANDEX_DISK_TOKEN, celery_app
+from config.logging_config import logger
 
 app_logger = logger.bind(name="app")
 
 
-async def upload_file_to_disk(dir_path: str, file_name: str, disk_folder_path: str, ya_token: str) -> bool:
+async def upload_file_to_disk(
+    dir_path: str, file_name: str, disk_folder_path: str, ya_token: str
+) -> bool:
     """Upload a file to Yandex Disk."""
     url = "https://cloud-api.yandex.net/v1/disk/resources/upload"
     headers = {"Authorization": f"OAuth {ya_token}"}
@@ -48,8 +52,9 @@ async def upload_file_to_disk(dir_path: str, file_name: str, disk_folder_path: s
         return False
 
 
-async def get_file_shareable_link(file_path: str, ya_token: str, max_retries: int = 3,
-                                  retry_delay: float = 1.0) -> str | None:
+async def get_file_shareable_link(
+    file_path: str, ya_token: str, max_retries: int = 3, retry_delay: float = 1.0
+) -> str | None:
     """Get a shareable link for a file on Yandex Disk with retry logic."""
     publish_url = "https://cloud-api.yandex.net/v1/disk/resources/publish"
     meta_url = "https://cloud-api.yandex.net/v1/disk/resources"
@@ -59,7 +64,9 @@ async def get_file_shareable_link(file_path: str, ya_token: str, max_retries: in
     async with aiohttp.ClientSession() as session:
         for attempt in range(1, max_retries + 1):
             try:
-                async with session.put(publish_url, headers=headers, params=params) as pub_response:
+                async with session.put(
+                    publish_url, headers=headers, params=params
+                ) as pub_response:
                     pub_response.raise_for_status()
 
                 async with session.get(meta_url, headers=headers, params=params) as meta_response:
@@ -68,7 +75,9 @@ async def get_file_shareable_link(file_path: str, ya_token: str, max_retries: in
                     public_url = data.get("public_url")
 
                     if public_url:
-                        app_logger.info(f"Public link obtained after {attempt} attempts: {public_url}")
+                        app_logger.info(
+                            f"Public link obtained after {attempt} attempts: {public_url}"
+                        )
                         return public_url
 
                 if attempt < max_retries:
@@ -93,7 +102,7 @@ async def get_direct_link(public_url: str) -> str | None:
 def celery_task_delete_media(self, file_path):
     try:
         delete_from_yadisk(YANDEX_DISK_TOKEN, file_path)
-        return {'status': 'success', 'file_path': file_path}
+        return {"status": "success", "file_path": file_path}
     except Exception as e:
         self.retry(exc=e, countdown=60)
 
@@ -115,8 +124,10 @@ def delete_from_yadisk(ya_token: str, file_disk_path: str, retries: int = 3):
                 return
 
             elif response.status_code in {429, 500, 502, 503, 504}:
-                app_logger.warning(f"Attempt {attempt}/{retries} failed: {response.status_code}. Retrying...")
-                time.sleep(2 ** attempt)
+                app_logger.warning(
+                    f"Attempt {attempt}/{retries} failed: {response.status_code}. Retrying..."
+                )
+                time.sleep(2**attempt)
 
             else:
                 error_text = response.text
@@ -126,4 +137,4 @@ def delete_from_yadisk(ya_token: str, file_disk_path: str, retries: int = 3):
             app_logger.warning(f"Attempt {attempt}/{retries} failed with exception: {str(e)}")
             if attempt == retries:
                 raise
-            time.sleep(2 ** attempt)
+            time.sleep(2**attempt)

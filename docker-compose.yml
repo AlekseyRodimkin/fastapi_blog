@@ -1,25 +1,28 @@
 services:
-#  web:
-#    build: .
-#    container_name: fastapi_app
-#    ports:
-#      - "8000:8000"
-#    depends_on:
-#      - postgres
-#    environment:
-#      - DB_HOST=${DB_HOST}
-#      - POSTGRES_DB=${DB_NAME}
-#      - POSTGRES_USER=${DB_USER}
-#      - POSTGRES_PASSWORD=${DB_PASSWORD}
-#    networks:
-#      - my_network
+  web:
+    build: .
+    container_name: fastapi_app
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    env_file: .env
+    environment:
+      - DB_HOST=${DB_HOST}
+      - POSTGRES_DB=${DB_NAME}
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    networks:
+      - my_network
 
   postgres:
     image: postgres:15
     container_name: postgres_db
     ports:
       - "5432:5432"
-    #    restart: always
+    restart: unless-stopped
+    env_file: .env
     environment:
       - POSTGRES_DB=${DB_NAME}
       - POSTGRES_USER=${DB_USER}
@@ -37,10 +40,32 @@ services:
     entrypoint: >
       bash -c "chown -R postgres:postgres /var/lib/postgresql/logs && exec docker-entrypoint.sh postgres"
 
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    networks:
+      - my_network
+
+  celery:
+    build: .
+    restart: unless-stopped
+    command: bash -c "touch logs/app_error.log logs/debug.log && celery -A config.config.celery_app worker --loglevel=info"
+    depends_on:
+      - redis
+      - web
+    env_file: .env
+    networks:
+      - my_network
 
 networks:
   my_network:
 
 volumes:
+  redis_data:
   pg_data:
   pg_logs:

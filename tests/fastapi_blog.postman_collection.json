@@ -1,7 +1,8 @@
 {
 	"info": {
 		"_postman_id": "2b15c833-5fd3-467a-82c9-db864924f696",
-		"name": "fastapi_blog",
+		"name": "FastApi blog",
+		"description": "Endpoints for the FastApi application.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
 		"_exporter_id": "31992445"
 	},
@@ -10,7 +11,7 @@
 			"name": "/api/users",
 			"item": [
 				{
-					"name": "/",
+					"name": "/users/",
 					"request": {
 						"method": "GET",
 						"header": [
@@ -27,7 +28,7 @@
 							},
 							{
 								"key": "api_key",
-								"value": "1",
+								"value": "",
 								"type": "text"
 							}
 						],
@@ -45,7 +46,7 @@
 					"response": []
 				},
 				{
-					"name": "/",
+					"name": "/users/",
 					"request": {
 						"method": "POST",
 						"header": [
@@ -61,13 +62,13 @@
 							},
 							{
 								"key": "api_key",
-								"value": "1",
+								"value": "",
 								"type": "text"
 							}
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"username\": \"1\",\n    \"email\": \"1\"\n}",
+							"raw": "{\n    \"username\": \"\",\n    \"email\": \"\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -88,7 +89,7 @@
 					"response": []
 				},
 				{
-					"name": "/me",
+					"name": "/users/me",
 					"request": {
 						"method": "GET",
 						"header": [
@@ -98,13 +99,8 @@
 								"type": "text"
 							},
 							{
-								"key": "Content-Type",
-								"value": "application/json",
-								"type": "text"
-							},
-							{
 								"key": "api_key",
-								"value": "1",
+								"value": "",
 								"type": "text"
 							}
 						],
@@ -122,7 +118,7 @@
 					"response": []
 				},
 				{
-					"name": "/{user_id}",
+					"name": "/users/{user_id}",
 					"request": {
 						"method": "GET",
 						"header": [
@@ -146,7 +142,7 @@
 					"response": []
 				},
 				{
-					"name": "/{user_id}/follow",
+					"name": "/users/{user_id}/follow",
 					"request": {
 						"method": "POST",
 						"header": [
@@ -157,18 +153,18 @@
 							},
 							{
 								"key": "api_key",
-								"value": "1",
+								"value": "",
 								"type": "text"
 							}
 						],
 						"url": {
-							"raw": "{{url}}/users/2/follow",
+							"raw": "{{url}}/users/1/follow",
 							"host": [
 								"{{url}}"
 							],
 							"path": [
 								"users",
-								"2",
+								"1",
 								"follow"
 							]
 						}
@@ -176,7 +172,7 @@
 					"response": []
 				},
 				{
-					"name": "/{user_id}/unfollow",
+					"name": "/users/{user_id}/unfollow",
 					"request": {
 						"method": "DELETE",
 						"header": [
@@ -187,18 +183,18 @@
 							},
 							{
 								"key": "api_key",
-								"value": "1",
+								"value": "",
 								"type": "text"
 							}
 						],
 						"url": {
-							"raw": "{{url}}/users/2/unfollow",
+							"raw": "{{url}}/users/1/unfollow",
 							"host": [
 								"{{url}}"
 							],
 							"path": [
 								"users",
-								"2",
+								"1",
 								"unfollow"
 							]
 						}
@@ -211,7 +207,7 @@
 			"name": "/api/medias",
 			"item": [
 				{
-					"name": "/",
+					"name": "/medias/",
 					"request": {
 						"method": "POST",
 						"header": [
@@ -227,7 +223,7 @@
 							},
 							{
 								"key": "api_key",
-								"value": "1",
+								"value": "",
 								"type": "text"
 							}
 						],
@@ -237,7 +233,7 @@
 								{
 									"key": "file",
 									"type": "file",
-									"src": "/home/aleksei/Pictures/Cool.jpeg"
+									"src": []
 								}
 							]
 						},
@@ -260,7 +256,7 @@
 			"name": "/api/tweets",
 			"item": [
 				{
-					"name": "/",
+					"name": "/tweets/",
 					"request": {
 						"method": "POST",
 						"header": [
@@ -276,13 +272,13 @@
 							},
 							{
 								"key": "api_key",
-								"value": "1",
+								"value": "",
 								"type": "text"
 							}
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"tweet_data\": \"Test post\",\n    \"media_ids\": []\n}",
+							"raw": "{\n    \"tweet_data\": \"\",\n    \"media_ids\": []\n\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -303,7 +299,7 @@
 					"response": []
 				},
 				{
-					"name": "/{tweet_id}",
+					"name": "/tweets/{tweet_id}",
 					"request": {
 						"method": "GET",
 						"header": [
@@ -314,7 +310,7 @@
 							},
 							{
 								"key": "api_key",
-								"value": "1",
+								"value": "",
 								"type": "text"
 							}
 						],
@@ -332,7 +328,7 @@
 					"response": []
 				},
 				{
-					"name": "/",
+					"name": "/tweets/",
 					"request": {
 						"method": "GET",
 						"header": [
@@ -343,7 +339,7 @@
 							},
 							{
 								"key": "api_key",
-								"value": "1",
+								"value": "",
 								"type": "text"
 							}
 						],
@@ -361,7 +357,7 @@
 					"response": []
 				},
 				{
-					"name": "/{tweet_id}",
+					"name": "/tweets/{tweet_id}",
 					"request": {
 						"method": "DELETE",
 						"header": [
@@ -372,7 +368,7 @@
 							},
 							{
 								"key": "api_key",
-								"value": "1",
+								"value": "",
 								"type": "text"
 							}
 						],
@@ -390,7 +386,7 @@
 					"response": []
 				},
 				{
-					"name": "/{tweet_id}/likes",
+					"name": "/tweets/{tweet_id}/likes",
 					"request": {
 						"method": "POST",
 						"header": [
@@ -401,7 +397,7 @@
 							},
 							{
 								"key": "api_key",
-								"value": "1",
+								"value": "",
 								"type": "text"
 							}
 						],
@@ -420,7 +416,7 @@
 					"response": []
 				},
 				{
-					"name": "{tweet_id}/likes",
+					"name": "/tweets{tweet_id}/likes",
 					"request": {
 						"method": "DELETE",
 						"header": [
@@ -431,7 +427,7 @@
 							},
 							{
 								"key": "api_key",
-								"value": "1",
+								"value": "",
 								"type": "text"
 							}
 						],
@@ -450,6 +446,23 @@
 					"response": []
 				}
 			]
+		},
+		{
+			"name": "/api/healthchecker",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{url}}/healthchecker",
+					"host": [
+						"{{url}}"
+					],
+					"path": [
+						"healthchecker"
+					]
+				}
+			},
+			"response": []
 		}
 	],
 	"event": [

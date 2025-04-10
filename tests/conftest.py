@@ -1,10 +1,10 @@
-from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
-from config.config import Base, get_db
-from app.app import app
-from loguru import logger
 import pytest_asyncio
+from app.app import app
+from config.config import Base, get_db
+from fastapi.testclient import TestClient
+from loguru import logger
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import sessionmaker
 
 tests_logger = logger.bind(name="tests")
 
@@ -27,25 +27,18 @@ test_data = {
         "created": {
             "headers": {"api_key": "key1"},
             "username": "test_user_1",
-            "email": "test1@example.com"
+            "email": "test1@example.com",
         },
         "new": {
             "headers": {"api_key": "key2"},
             "username": "test_user_2",
-            "email": "test2@example.com"
+            "email": "test2@example.com",
         },
     },
     "tweets": {
-        "created": {
-            "tweet_data": "Test body 1",
-            "media_ids": []
-        },
-        "new": {
-            "tweet_data": "Test body 2",
-            "media_ids": [1, 2, 3]
-        }
-    }
-
+        "created": {"tweet_data": "Test body 1", "media_ids": []},
+        "new": {"tweet_data": "Test body 2", "media_ids": [1, 2, 3]},
+    },
 }
 
 
@@ -121,12 +114,10 @@ async def added_test_post(db_session, added_test_user):
     tests_logger.debug("added_test_post()")
 
     from app.models import Tweet
+
     created_post = test_data["tweets"]["created"]
 
-    test_post = Tweet(
-        tweet_data=created_post["tweet_data"],
-        user_id=added_test_user.id
-    )
+    test_post = Tweet(tweet_data=created_post["tweet_data"], user_id=added_test_user.id)
     db_session.add(test_post)
     await db_session.flush()
     await db_session.refresh(test_post)

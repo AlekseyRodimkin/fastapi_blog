@@ -1,10 +1,11 @@
-from fastapi.middleware.cors import CORSMiddleware
-from config.logging_config import logger
-from config.config import engine
-from .routes import users_router, medias_router, tweets_router
-from . import models
-from . import events
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from config.config import engine
+from config.logging_config import logger
+
+from . import events, models
+from .routes import medias_router, tweets_router, users_router
 
 app_logger = logger.bind(name="app")
 

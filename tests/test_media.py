@@ -1,6 +1,8 @@
-from .conftest import test_data, assert_and_log
-from config.logging_config import logger
 import os
+
+from config.logging_config import logger
+
+from .conftest import assert_and_log, test_data
 
 tests_logger = logger.bind(name="tests")
 
@@ -27,18 +29,18 @@ def test_media_load(added_test_user, test_client):
             response = test_client.post(
                 "/api/medias",
                 headers=old_user["headers"],
-                files={"file": ("test_image.jpg", f, "image/jpeg")}
+                files={"file": ("test_image.jpg", f, "image/jpeg")},
             )
 
         assert_and_log(
             function_name="test_media_load",
             condition=response.status_code == 201,
-            error_message=f"{response.status_code} != 201"
+            error_message=f"{response.status_code} != 201",
         )
 
         response_data = response.json()
         assert_and_log(
             function_name="test_media_load",
             condition="result" in response_data and "media_id" in response_data,
-            error_message="`result` and `media_id` not in response_data"
+            error_message="`result` and `media_id` not in response_data",
         )

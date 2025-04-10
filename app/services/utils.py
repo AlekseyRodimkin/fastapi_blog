@@ -1,6 +1,8 @@
-from config.logging_config import logger
-import aiofiles.os as aio_os
 import os
+
+import aiofiles.os as aio_os
+
+from config.logging_config import logger
 
 app_logger = logger.bind(name="app")
 

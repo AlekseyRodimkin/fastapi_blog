@@ -1,7 +1,8 @@
+from celery import group
 from sqlalchemy import event
+
 from app import Tweet
 from config.logging_config import logger
-from celery import group
 
 app_logger = logger.bind(name="app")
 
